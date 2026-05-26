@@ -1,0 +1,2204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Tilt Maze">
+  <link id="pwa-manifest" rel="manifest">
+  <link id="apple-touch-icon" rel="apple-touch-icon">
+  <title>Tilt Maze Math</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: #0A0F1E;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
+
+    #game-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      height: 100%;
+    }
+
+    /* ══════════════════════════════════════════════════════
+       TOP BAR  —  Left: ◀ Level N ▶ | Center: Target | Right: 🔍
+       ══════════════════════════════════════════════════════ */
+    #top-bar {
+      width: 100%; max-width: 390px; height: 90px; flex-shrink: 0;
+      background: #111827; border-bottom: 1px solid #1F2E4D;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 12px; gap: 8px;
+    }
+
+    /* Left cluster: prev ▶ "Level N" ◀ next */
+    #level-group {
+      display: flex; align-items: center; gap: 3px; flex-shrink: 0;
+    }
+    #level-label {
+      color: #94A3B8; font-size: 12px; font-weight: 700;
+      letter-spacing: .04em; white-space: nowrap;
+      padding: 0 3px; min-width: 48px; text-align: center;
+    }
+    .nav-btn {
+      width: 26px; height: 26px;
+      background: #1E2D4A; border: 1px solid #2A3D60; border-radius: 6px;
+      color: #94A3B8; font-size: 10px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+      transition: background .12s, transform .08s; flex-shrink: 0;
+    }
+    .nav-btn:active   { background: #2A3D60; transform: scale(.90); }
+    .nav-btn:disabled { opacity: .22; cursor: default; }
+
+    /* Center: "Target" caption + big number */
+    #target-label {
+      flex: 1; text-align: center; min-width: 0;
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+    }
+    #target-caption {
+      color: #64748B; font-size: 10px; font-weight: 700;
+      letter-spacing: .1em; text-transform: uppercase; line-height: 1;
+    }
+    #target-value {
+      color: #F1F5F9; font-size: 52px; font-weight: 900;
+      font-variant-numeric: tabular-nums; line-height: 1.1;
+      letter-spacing: -.01em;
+    }
+
+    /* Right: hint button */
+    #hint-btn {
+      height: 34px; padding: 0 10px; flex-shrink: 0;
+      background: rgba(20,14,4,.9);
+      border: 1.5px solid #92400E; border-radius: 8px;
+      color: #FCD34D; font-size: 12px; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center;
+      -webkit-tap-highlight-color: transparent;
+      white-space: nowrap; letter-spacing: .02em;
+      transition: background .12s, opacity .2s;
+    }
+    #hint-btn:not(:disabled):active { background: rgba(245,158,11,.22); border-color: #B45309; }
+    #hint-btn:disabled { opacity: .28; cursor: default; color: #475569; border-color: #374870; }
+
+    /* ══════════════════════════════════════════════════════
+       SVG CANVAS
+       ══════════════════════════════════════════════════════ */
+    #svg-container {
+      width: 100%; max-width: 390px; flex: 1;
+      display: flex; overflow: hidden; touch-action: none;
+      transition: opacity .15s ease;
+    }
+    #maze-svg { width: 100%; height: 100%; display: block; }
+
+    /* ══════════════════════════════════════════════════════
+       BOTTOM BAR  —  equation (scrollable) + reset button
+       ══════════════════════════════════════════════════════ */
+    #eq-bar {
+      width: 100%; max-width: 390px; height: 54px; flex-shrink: 0;
+      background: #0D1526; border-top: 1px solid #1E3A5F;
+      display: flex; align-items: center;
+    }
+    #eq-scroll {
+      flex: 1; overflow-x: auto; overflow-y: hidden;
+      display: flex; align-items: center;
+      padding: 0 14px; scrollbar-width: none;
+    }
+    #eq-scroll::-webkit-scrollbar { display: none; }
+    #eq-text {
+      color: #CBD5E1; font-size: 18px; font-weight: 700;
+      font-family: ui-monospace,'Courier New',monospace;
+      font-variant-numeric: tabular-nums; letter-spacing: .03em;
+      white-space: nowrap; transition: color .25s;
+    }
+    #eq-text.win  { color: #86EFAC; }
+    #eq-text.miss { color: #F87171; }
+
+    /* Reset lives inside the bottom bar — no longer fixed */
+    #reset-btn {
+      width: 52px; height: 54px; flex-shrink: 0;
+      background: transparent;
+      border: none; border-left: 1px solid #1E3A5F;
+      color: #64748B; font-size: 22px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+      transition: background .1s, color .1s;
+    }
+    #reset-btn:active { background: rgba(37,99,235,.2); color: #93C5FD; }
+
+    /* Undo / Redo buttons — left side of bottom bar */
+    #undo-btn, #redo-btn {
+      width: 44px; height: 54px; flex-shrink: 0;
+      background: transparent;
+      border: none; border-right: 1px solid #1E3A5F;
+      color: #64748B; font-size: 20px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+      transition: background .1s, color .1s;
+    }
+    #undo-btn:not(:disabled):active,
+    #redo-btn:not(:disabled):active { background: rgba(37,99,235,.2); color: #93C5FD; }
+    #undo-btn:disabled, #redo-btn:disabled { opacity: .28; cursor: default; }
+
+    /* ══════════════════════════════════════════════════════
+       D-PAD  (positioned above bottom bar)
+       ══════════════════════════════════════════════════════ */
+    #dpad {
+      position: fixed; bottom: 64px; left: 12px;
+      display: grid;
+      grid-template-columns: repeat(3, 40px);
+      grid-template-rows:    repeat(3, 40px);
+      gap: 3px; z-index: 50; touch-action: none;
+    }
+    #dpad.hidden { display: none; }
+    .dpad-btn {
+      background: rgba(10,20,48,.82);
+      border: 1px solid rgba(94,130,195,.32); border-radius: 10px;
+      color: #6882A4; font-size: 15px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none; user-select: none;
+      transition: background .08s, color .08s;
+    }
+    .dpad-btn:active { background: rgba(37,99,235,.52); color: #fff; border-color: rgba(147,197,253,.55); }
+
+    /* ══════════════════════════════════════════════════════
+       TOAST / KEY-HINT  (above bottom bar)
+       ══════════════════════════════════════════════════════ */
+    #toast {
+      position: fixed; bottom: 74px; left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: rgba(220,38,38,.92); color: #fff;
+      font-size: 14px; font-weight: 600; letter-spacing: .02em;
+      padding: 9px 20px; border-radius: 20px;
+      pointer-events: none; opacity: 0; z-index: 100;
+      transition: opacity .25s, transform .25s; white-space: nowrap;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    #key-hint {
+      position: fixed; bottom: 64px; left: 50%; transform: translateX(-50%);
+      background: rgba(15,25,50,.85); color: #94A3B8;
+      font-size: 11px; letter-spacing: .06em; padding: 5px 12px;
+      border-radius: 20px; border: 1px solid #2A3A60;
+      pointer-events: none; opacity: 1; transition: opacity 1s;
+      z-index: 40; white-space: nowrap;
+    }
+    #key-hint.fade { opacity: 0; }
+
+    /* ══════════════════════════════════════════════════════
+       TILT DEBUG OVERLAY  —  remove once tilt confirmed working
+       ══════════════════════════════════════════════════════ */
+    #tilt-debug {
+      position: fixed; top: 6px; left: 6px; z-index: 9999;
+      background: rgba(0,0,0,.72); color: #4ADE80;
+      font: 700 11px/1.5 ui-monospace,'Courier New',monospace;
+      padding: 4px 8px; border-radius: 6px;
+      border: 1px solid rgba(74,222,128,.35);
+      pointer-events: none; letter-spacing: .04em;
+      white-space: nowrap;
+    }
+
+    /* ══════════════════════════════════════════════════════
+       START OVERLAY  —  gesture gate + tilt unlock (all platforms)
+       ══════════════════════════════════════════════════════ */
+    #start-overlay {
+      position: fixed; inset: 0;
+      background: rgba(5,10,25,.93);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 200; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    }
+    #start-overlay.hidden { display: none; }
+    #start-card {
+      background: #161F38; border: 1px solid #2E4272; border-radius: 24px;
+      padding: 36px 28px 28px; text-align: center;
+      width: min(320px, calc(100vw - 40px));
+    }
+    #start-icon  { font-size: 52px; line-height: 1; margin-bottom: 18px; }
+    #start-title { color: #F1F5F9; font-size: 22px; font-weight: 800; margin-bottom: 10px; }
+    #start-desc  { color: #94A3B8; font-size: 15px; line-height: 1.6; margin-bottom: 28px; }
+    #start-tap-btn {
+      display: block; width: 100%; padding: 16px;
+      background: #2563EB; border: none; border-radius: 13px;
+      color: #fff; font-size: 17px; font-weight: 700; cursor: pointer;
+      margin-bottom: 10px; -webkit-tap-highlight-color: transparent;
+      transition: background .15s, transform .1s;
+    }
+    #start-tap-btn:active { background: #1D4ED8; transform: scale(.97); }
+    #start-keys-btn {
+      display: block; width: 100%; padding: 13px;
+      background: transparent; border: 1px solid #2A3A5E; border-radius: 13px;
+      color: #5A6E8A; font-size: 15px; cursor: pointer;
+      -webkit-tap-highlight-color: transparent; transition: background .12s;
+    }
+    #start-keys-btn:active { background: rgba(46,64,112,.3); }
+
+    /* ══════════════════════════════════════════════════════
+       WIN OVERLAY  —  with star rating
+       ══════════════════════════════════════════════════════ */
+    #win-overlay {
+      position: fixed; inset: 0;
+      background: rgba(5,10,25,.93);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 300;
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    }
+    #win-overlay.hidden { display: none; }
+    #win-card {
+      background: #161F38; border: 1px solid #3B5BA5; border-radius: 24px;
+      padding: 32px 28px 28px; text-align: center;
+      width: min(340px, calc(100vw - 40px));
+      animation: winPop .35s cubic-bezier(.34,1.56,.64,1) both;
+    }
+    @keyframes winPop {
+      from { opacity: 0; transform: scale(.82) translateY(24px); }
+      to   { opacity: 1; transform: scale(1)   translateY(0); }
+    }
+    #win-icon     { font-size: 44px; line-height: 1; margin-bottom: 6px; }
+    #win-title    { color: #F1F5F9; font-size: 24px; font-weight: 800; margin-bottom: 6px; }
+    #win-stars    { font-size: 26px; letter-spacing: 3px; margin-bottom: 10px; line-height: 1; }
+    #win-equation {
+      color: #7DD3FC; font-size: 16px; font-weight: 600;
+      font-family: ui-monospace,'Courier New',monospace;
+      letter-spacing: .02em; margin-bottom: 6px; word-break: break-all;
+    }
+    #win-result {
+      color: #86EFAC; font-size: 40px; font-weight: 900;
+      font-variant-numeric: tabular-nums; margin-bottom: 24px;
+    }
+    #win-next-btn {
+      display: block; width: 100%; padding: 17px;
+      background: #2563EB; border: none; border-radius: 13px;
+      color: #fff; font-size: 17px; font-weight: 700; cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: background .15s, transform .1s;
+    }
+    #win-next-btn:active { background: #1D4ED8; transform: scale(.97); }
+
+    /* ══════════════════════════════════════════════════════
+       RESPONSIVE BREAKPOINTS
+       ══════════════════════════════════════════════════════ */
+
+    /* 375px — iPhone SE: compact, slightly smaller everything */
+    @media (max-width: 389px) {
+      #top-bar    { max-width: 100%; height: 76px; padding: 0 10px; gap: 6px; }
+      #svg-container, #eq-bar { max-width: 100%; }
+      #level-label  { font-size: 10px; min-width: 40px; }
+      #target-caption { font-size: 9px; }
+      #target-value { font-size: 42px; }
+      .nav-btn      { width: 22px; height: 22px; font-size: 9px; border-radius: 5px; }
+      #hint-btn     { font-size: 11px; padding: 0 7px; height: 29px; }
+      #eq-bar       { height: 48px; }
+      #eq-text      { font-size: 16px; }
+      #undo-btn, #redo-btn { width: 36px; height: 48px; font-size: 17px; }
+      #reset-btn    { width: 44px; height: 48px; font-size: 19px; }
+      #dpad         { bottom: 56px; left: 10px;
+                      grid-template-columns: repeat(3,36px);
+                      grid-template-rows:    repeat(3,36px); }
+      .dpad-btn     { font-size: 13px; }
+      #key-hint     { bottom: 56px; }
+      #toast        { bottom: 66px; }
+    }
+
+    /* 414px — iPhone Plus: slight scale-up */
+    @media (min-width: 414px) and (max-width: 767px) {
+      #top-bar, #svg-container, #eq-bar { max-width: 414px; }
+      #target-value { font-size: 56px; }
+    }
+
+    /* 768px — tablet portrait: 1.5× */
+    @media (min-width: 768px) {
+      #top-bar, #svg-container, #eq-bar { max-width: 585px; }
+      #top-bar      { height: 100px; padding: 0 20px; gap: 12px; }
+      #level-label  { font-size: 15px; min-width: 60px; }
+      #target-caption { font-size: 12px; }
+      #target-value { font-size: 72px; }
+      .nav-btn      { width: 36px; height: 36px; font-size: 14px; border-radius: 8px; }
+      #hint-btn     { height: 42px; padding: 0 14px; font-size: 16px; border-radius: 10px; }
+      #eq-bar       { height: 68px; }
+      #eq-scroll    { padding: 0 18px; }
+      #eq-text      { font-size: 22px; }
+      #undo-btn, #redo-btn { width: 56px; height: 68px; font-size: 24px; }
+      #reset-btn    { width: 64px; height: 68px; font-size: 26px; }
+      #dpad         { bottom: 78px; left: 20px;
+                      grid-template-columns: repeat(3,54px);
+                      grid-template-rows:    repeat(3,54px); gap: 4px; }
+      .dpad-btn     { font-size: 20px; border-radius: 12px; }
+      #key-hint     { bottom: 78px; }
+      #toast        { bottom: 88px; }
+      #win-icon     { font-size: 52px; margin-bottom: 8px; }
+      #win-title    { font-size: 30px; }
+      #win-stars    { font-size: 34px; }
+      #win-equation { font-size: 20px; }
+      #win-result   { font-size: 50px; }
+      #win-next-btn { font-size: 20px; padding: 20px; border-radius: 16px; }
+    }
+
+    /* 1024px — tablet landscape: 1.8× */
+    @media (min-width: 1024px) {
+      #top-bar, #svg-container, #eq-bar { max-width: 702px; }
+      #top-bar      { height: 110px; padding: 0 28px; }
+      #level-label  { font-size: 17px; min-width: 68px; }
+      #target-caption { font-size: 13px; }
+      #target-value { font-size: 84px; }
+      .nav-btn      { width: 42px; height: 42px; font-size: 16px; }
+      #hint-btn     { height: 48px; padding: 0 16px; font-size: 18px; }
+      #eq-bar       { height: 76px; }
+      #eq-scroll    { padding: 0 22px; }
+      #eq-text      { font-size: 26px; }
+      #undo-btn, #redo-btn { width: 64px; height: 76px; font-size: 28px; }
+      #reset-btn    { width: 72px; height: 76px; font-size: 28px; }
+    }
+
+    /* ══════════════════════════════════════════════════════
+       SAFE-AREA INSETS  (iPhone X+ notch / home indicator)
+       ══════════════════════════════════════════════════════ */
+    @supports (padding: env(safe-area-inset-bottom)) {
+      #eq-bar    { height: calc(54px + env(safe-area-inset-bottom));
+                   padding-bottom: env(safe-area-inset-bottom); }
+      #undo-btn, #redo-btn {
+                   height: calc(54px + env(safe-area-inset-bottom));
+                   padding-bottom: env(safe-area-inset-bottom); }
+      #reset-btn { height: calc(54px + env(safe-area-inset-bottom));
+                   padding-bottom: env(safe-area-inset-bottom); }
+      #dpad      { bottom: calc(64px + env(safe-area-inset-bottom)); }
+      #toast     { bottom: calc(74px + env(safe-area-inset-bottom)); }
+      #key-hint  { bottom: calc(64px + env(safe-area-inset-bottom)); }
+
+      @media (max-width: 389px) {
+        #eq-bar    { height: calc(48px + env(safe-area-inset-bottom)); }
+        #undo-btn, #redo-btn { height: calc(48px + env(safe-area-inset-bottom));
+                     padding-bottom: env(safe-area-inset-bottom); }
+        #reset-btn { height: calc(48px + env(safe-area-inset-bottom)); }
+        #dpad      { bottom: calc(56px + env(safe-area-inset-bottom)); }
+        #toast     { bottom: calc(66px + env(safe-area-inset-bottom)); }
+        #key-hint  { bottom: calc(56px + env(safe-area-inset-bottom)); }
+      }
+
+      @media (min-width: 768px) {
+        #eq-bar    { height: calc(68px + env(safe-area-inset-bottom)); }
+        #undo-btn, #redo-btn { height: calc(68px + env(safe-area-inset-bottom));
+                     padding-bottom: env(safe-area-inset-bottom); }
+        #reset-btn { height: calc(68px + env(safe-area-inset-bottom)); }
+        #dpad      { bottom: calc(78px + env(safe-area-inset-bottom)); }
+        #toast     { bottom: calc(88px + env(safe-area-inset-bottom)); }
+        #key-hint  { bottom: calc(78px + env(safe-area-inset-bottom)); }
+      }
+
+      @media (min-width: 1024px) {
+        #eq-bar    { height: calc(76px + env(safe-area-inset-bottom)); }
+        #undo-btn, #redo-btn { height: calc(76px + env(safe-area-inset-bottom));
+                     padding-bottom: env(safe-area-inset-bottom); }
+        #reset-btn { height: calc(76px + env(safe-area-inset-bottom)); }
+      }
+    }
+  </style>
+</head>
+<body>
+
+<div id="game-wrapper">
+  <div id="top-bar">
+    <!-- Left: nav + level -->
+    <div id="level-group">
+      <button class="nav-btn" id="btn-prev" title="Previous level" aria-label="Previous level">◀</button>
+      <div id="level-label">Level 1</div>
+      <button class="nav-btn" id="btn-next" title="Next level" aria-label="Next level">▶</button>
+    </div>
+    <!-- Center: target -->
+    <div id="target-label">
+      <span id="target-caption">Target</span>
+      <span id="target-value">–</span>
+    </div>
+    <!-- Right: hint -->
+    <button id="hint-btn" title="Use a hint (3 remaining)" aria-label="Use hint">🔍 ×3</button>
+  </div>
+
+  <div id="svg-container">
+    <svg id="maze-svg" viewBox="0 0 390 764"
+         preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+    </svg>
+  </div>
+
+  <!-- Bottom bar: undo + redo + equation (scrollable) + reset -->
+  <div id="eq-bar">
+    <button id="undo-btn" aria-label="Undo" disabled>↩</button>
+    <button id="redo-btn" aria-label="Redo" disabled>↪</button>
+    <div id="eq-scroll"><span id="eq-text">?</span></div>
+    <button id="reset-btn" aria-label="Reset level">↺</button>
+  </div>
+</div>
+
+<!-- Win overlay -->
+<div id="win-overlay" class="hidden">
+  <div id="win-card">
+    <div id="win-icon">🎉</div>
+    <div id="win-title">Solved!</div>
+    <div id="win-stars"></div>
+    <div id="win-equation"></div>
+    <div id="win-result"></div>
+    <button id="win-next-btn">Next Level →</button>
+  </div>
+</div>
+
+<!-- Start overlay — gesture gate + tilt/audio unlock (all platforms) -->
+<div id="start-overlay">
+  <div id="start-card">
+    <div id="start-icon">🎯</div>
+    <div id="start-title">Tilt Maze Math</div>
+    <p id="start-desc">Tilt your phone to roll the ball through the maze and hit the target number. Tap below to begin!</p>
+    <button id="start-tap-btn">▶  Tap to Start</button>
+    <button id="start-keys-btn">Use Buttons / Arrow Keys</button>
+  </div>
+</div>
+
+<!-- D-pad (bottom-left, hidden when tilt active) -->
+<div id="dpad" class="hidden">
+  <div></div>
+  <button class="dpad-btn" id="dpad-up"    aria-label="Up">▲</button>
+  <div></div>
+  <button class="dpad-btn" id="dpad-left"  aria-label="Left">◀</button>
+  <div></div>
+  <button class="dpad-btn" id="dpad-right" aria-label="Right">▶</button>
+  <div></div>
+  <button class="dpad-btn" id="dpad-down"  aria-label="Down">▼</button>
+  <div></div>
+</div>
+
+<!-- Tilt debug overlay — remove once tilt confirmed working -->
+<div id="tilt-debug">β: 0.0  γ: 0.0</div>
+
+<!-- Toast notification -->
+<div id="toast"></div>
+
+<div id="key-hint">↑ ↓ ← →  arrow keys to move</div>
+<pre id="output" style="display:none"></pre>
+
+<script>
+// ════════════════════════════════════════════════════════════════════════════
+// CHUNK 1 — CORE MATH ENGINE
+// ════════════════════════════════════════════════════════════════════════════
+
+function rng(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function round2(n)     { return Math.round(n * 100) / 100; }
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function permutations(arr) {
+  if (arr.length <= 1) return [arr];
+  const result = [];
+  for (let i = 0; i < arr.length; i++) {
+    const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+    for (const perm of permutations(rest)) result.push([arr[i], ...perm]);
+  }
+  return result;
+}
+
+function operatorCombinations(operators, count) {
+  if (count === 0) return [[]];
+  const rest = operatorCombinations(operators, count - 1);
+  const out  = [];
+  for (const op of operators) for (const c of rest) out.push([op, ...c]);
+  return out;
+}
+
+function getDifficultyConfig(level) {
+  if (level <= 3) return { tier:'easy',   poolSize:rng(4,5), minVal:1, maxVal:9,
+                           decimals:false, operators:['+','-'],         targetMin:1, targetMax:20  };
+  if (level <= 6) return { tier:'medium', poolSize:rng(5,6), minVal:1, maxVal:20,
+                           decimals:false, operators:['+','-','*'],     targetMin:1, targetMax:50  };
+  return               { tier:'hard',   poolSize:rng(6,8), minVal:1,  maxVal:25,
+                           decimals:level>=9, operators:['+','-','*','/'], targetMin:1, targetMax:100 };
+}
+
+function generateNumberPool(level) {
+  const cfg = getDifficultyConfig(level);
+  return Array.from({ length: cfg.poolSize }, () =>
+    cfg.decimals && Math.random() < 0.4
+      ? round2(rng(cfg.minVal, cfg.maxVal) + rng(1,9)/10)
+      : rng(cfg.minVal, cfg.maxVal));
+}
+
+function generateOperatorPool(level, numberCount) {
+  const { operators } = getDifficultyConfig(level);
+  return Array.from({ length: numberCount - 1 },
+    () => operators[rng(0, operators.length - 1)]);
+}
+
+function evaluateSequence(numbers, operators) {
+  if (numbers.length !== operators.length + 1) return null;
+  let r = numbers[0];
+  for (let i = 0; i < operators.length; i++) {
+    const n = numbers[i + 1];
+    if      (operators[i] === '+') r += n;
+    else if (operators[i] === '-') r -= n;
+    else if (operators[i] === '*') r *= n;
+    else if (operators[i] === '/') { if (n === 0) return null; r /= n; }
+  }
+  return round2(r);
+}
+
+function checkSolvability(numbers, operators, target) {
+  const numPerms = permutations(numbers);
+  const opCombos = operatorCombinations(operators, numbers.length - 1);
+  const found    = [];
+  for (const np of numPerms) {
+    for (const oc of opCombos) {
+      const r = evaluateSequence(np, oc);
+      if (r !== null && Math.abs(r - target) < 0.001) {
+        found.push({ numbers: np, operators: oc, result: r });
+        if (found.length >= 5) return { solvable: true, expressions: found };
+      }
+    }
+  }
+  return { solvable: found.length > 0, expressions: found };
+}
+
+function generateTarget(numbers, operators) {
+  for (let i = 0; i < 20; i++) {
+    const r = evaluateSequence(shuffle(numbers), shuffle(operators));
+    if (r !== null && r > 0) return r;
+  }
+  return round2(numbers.reduce((a,b) => a+b, 0));
+}
+
+function generateLevel(level) {
+  const cfg = getDifficultyConfig(level);
+  let numbers, operators, target, solvability, attempts = 0;
+  do {
+    numbers     = generateNumberPool(level);
+    operators   = generateOperatorPool(level, numbers.length);
+    target      = generateTarget(numbers, operators);
+    solvability = checkSolvability(numbers, operators, target);
+    attempts++;
+  } while (!solvability.solvable && attempts < 10);
+  return { level, tier:cfg.tier, numbers, operators, target,
+           solvable:solvability.solvable, solutions:solvability.expressions, attempts };
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHUNK 2 — MAZE DATA STRUCTURES
+// ════════════════════════════════════════════════════════════════════════════
+
+class MazeNode {
+  constructor(id, type, value, x, y, connections = []) {
+    this.id = id; this.type = type; this.value = value;
+    this.x = x;   this.y = y;      this.connections = connections;
+  }
+}
+
+class Maze {
+  constructor(level, nodes, target, winPath) {
+    this.level = level; this.nodes = nodes;
+    this.target = target; this.winPath = winPath;
+    this.gridSize = { width: 390, height: 764 };
+    this.tier = level <= 3 ? 'easy' : level <= 6 ? 'medium' : 'hard';
+  }
+  getNode(id)    { return this.nodes.find(n => n.id === id); }
+  getStartNode() { return this.nodes.find(n => n.type === 'START'); }
+  getGoalNode()  { return this.nodes.find(n => n.type === 'GOAL'); }
+  isDeadEnd(id)  { const n = this.getNode(id); return n && n.type !== 'GOAL' && n.connections.length === 0; }
+
+  evaluateWinPath() {
+    const nums = [], ops = [];
+    for (const id of this.winPath) {
+      const n = this.getNode(id);
+      if (n.type === 'NUMBER')   nums.push(n.value);
+      if (n.type === 'OPERATOR') ops.push(n.value);
+    }
+    return evaluateSequence(nums, ops);
+  }
+}
+
+function getEasyTemplate() {
+  const cx = 195;
+  return {
+    winPath: ['start','n1','op1','n2','op2','n3','goal'],
+    nodes: [
+      { id:'start', type:'START',    x:cx, y:40,  connections:['n1']   },
+      { id:'n1',    type:'NUMBER',   x:cx, y:150, connections:['op1']  },
+      { id:'op1',   type:'OPERATOR', x:cx, y:260, connections:['n2']   },
+      { id:'n2',    type:'NUMBER',   x:cx, y:370, connections:['op2']  },
+      { id:'op2',   type:'OPERATOR', x:cx, y:475, connections:['n3']   },
+      { id:'n3',    type:'NUMBER',   x:cx, y:580, connections:['goal'] },
+      { id:'goal',  type:'GOAL',     x:cx, y:680, connections:[]       },
+    ],
+  };
+}
+
+function getMediumTemplate() {
+  return {
+    winPath: ['start','n1','op1','n2','op2','n3','goal'],
+    nodes: [
+      { id:'start',   type:'START',    x:195, y:40,  connections:['n1']            },
+      { id:'n1',      type:'NUMBER',   x:195, y:140, connections:['op1','opdead1'] },
+      { id:'op1',     type:'OPERATOR', x:100, y:245, connections:['n2']            },
+      { id:'opdead1', type:'OPERATOR', x:290, y:245, connections:[]                },
+      { id:'n2',      type:'NUMBER',   x:100, y:355, connections:['op2']           },
+      { id:'op2',     type:'OPERATOR', x:100, y:460, connections:['n3','ndead2']   },
+      { id:'ndead2',  type:'NUMBER',   x:290, y:460, connections:[]                },
+      { id:'n3',      type:'NUMBER',   x:195, y:560, connections:['goal']          },
+      { id:'goal',    type:'GOAL',     x:195, y:660, connections:[]                },
+    ],
+  };
+}
+
+function getHardTemplate() {
+  return {
+    winPath: ['start','n1','op1','n2','op2','n3','op3','n4','goal'],
+    nodes: [
+      { id:'start',   type:'START',    x:195, y:40,  connections:['n1']            },
+      { id:'n1',      type:'NUMBER',   x:195, y:125, connections:['op1','opdead1'] },
+      { id:'op1',     type:'OPERATOR', x:110, y:210, connections:['n2']            },
+      { id:'opdead1', type:'OPERATOR', x:280, y:210, connections:['ndead1']        },
+      { id:'n2',      type:'NUMBER',   x:110, y:300, connections:['op2']           },
+      { id:'ndead1',  type:'NUMBER',   x:280, y:300, connections:[]                },
+      { id:'op2',     type:'OPERATOR', x:110, y:390, connections:['n3','ndead2']   },
+      { id:'ndead2',  type:'NUMBER',   x:280, y:390, connections:[]                },
+      { id:'n3',      type:'NUMBER',   x:195, y:475, connections:['op3','opdead2'] },
+      { id:'op3',     type:'OPERATOR', x:110, y:560, connections:['n4']            },
+      { id:'opdead2', type:'OPERATOR', x:280, y:560, connections:[]                },
+      { id:'n4',      type:'NUMBER',   x:195, y:645, connections:['goal']          },
+      { id:'goal',    type:'GOAL',     x:195, y:728, connections:[]                },
+    ],
+  };
+}
+
+function getMazeTemplate(level) {
+  if (level <= 3) return getEasyTemplate();
+  if (level <= 6) return getMediumTemplate();
+  return getHardTemplate();
+}
+
+function generateOneNumber(cfg) {
+  return cfg.decimals && Math.random() < 0.4
+    ? round2(rng(cfg.minVal, cfg.maxVal) + rng(1,9)/10)
+    : rng(cfg.minVal, cfg.maxVal);
+}
+
+// ── Seeded PRNG (Park-Miller LCG) — deterministic per level ──────────────────
+function makeRng(seed) {
+  // Ensure seed ∈ [1, 2147483646]
+  let s = ((seed % 2147483646) + 2147483646) % 2147483646 + 1;
+  return function() {
+    s = (s * 16807) % 2147483647;
+    return (s - 1) / 2147483646;  // returns [0, 1)
+  };
+}
+
+// ── Scatter node positions randomly across the SVG viewport ──────────────────
+// Rules: edge ≥ 40px, node-to-node ≥ 82px, START near top-centre,
+// GOAL near bottom-centre, others in middle 60%.
+// Seeded by level — same level always produces the same layout.
+function scatterNodes(templateNodes, level) {
+  const rand = makeRng(level * 7919 + 3571);
+
+  const W = 390, H = 764;
+  const MINSEP = 110;   // min center-to-center px — increased for more spread
+
+  const xMin = 20 + R,  xMax = 370 - R;    // 48 → 342 (near full width)
+  const yMin = 30 + R,  yMax = H - 30 - R; // 58 → 706
+
+  const playH = yMax - yMin;  // ~648
+
+  // Zone thresholds (15% top/bottom, 70% middle)
+  const topEnd = yMin + playH * 0.15;   // top 15% ends here  (~155)
+  const midEnd = yMax - playH * 0.15;   // bottom 15% starts  (~609)
+  const midH   = midEnd - topEnd;       // middle 70% height
+
+  const placed = [];
+
+  function tooClose(x, y) {
+    for (const p of placed) {
+      const dx = p.x - x, dy = p.y - y;
+      if (dx * dx + dy * dy < MINSEP * MINSEP) return true;
+    }
+    return false;
+  }
+
+  function bandCount(y) {
+    const BAND = 60;
+    let n = 0;
+    for (const p of placed) { if (Math.abs(p.y - y) < BAND) n++; }
+    return n;
+  }
+
+  function tryPlace(xLo, xHi, yLo, yHi, maxTries = 400) {
+    // Pass 1: respect spacing AND max-2-per-horizontal-band
+    for (let i = 0; i < maxTries; i++) {
+      const x = Math.round(xLo + rand() * (xHi - xLo));
+      const y = Math.round(yLo + rand() * (yHi - yLo));
+      if (!tooClose(x, y) && bandCount(y) < 2) return { x, y };
+    }
+    // Pass 2: relax band limit, keep spacing
+    for (let i = 0; i < 200; i++) {
+      const x = Math.round(xLo + rand() * (xHi - xLo));
+      const y = Math.round(yLo + rand() * (yHi - yLo));
+      if (!tooClose(x, y)) return { x, y };
+    }
+    // Fallback: ignore all constraints to prevent deadlock
+    return {
+      x: Math.round(xLo + rand() * (xHi - xLo)),
+      y: Math.round(yLo + rand() * (yHi - yLo)),
+    };
+  }
+
+  // Grid-cell placement for middle nodes
+  function tryPlaceInCell(col, cols, row, rows) {
+    const cellW = (xMax - xMin) / cols;
+    const cellH = midH / rows;
+    const cxLo  = xMin + col * cellW;
+    const cxHi  = cxLo + cellW;
+    const cyLo  = topEnd + row * cellH;
+    const cyHi  = cyLo + cellH;
+    // Try within the assigned cell first
+    for (let i = 0; i < 250; i++) {
+      const x = Math.round(cxLo + rand() * (cxHi - cxLo));
+      const y = Math.round(cyLo + rand() * (cyHi - cyLo));
+      if (!tooClose(x, y)) return { x, y };
+    }
+    // Fall back to full middle zone
+    return tryPlace(xMin, xMax, topEnd, midEnd);
+  }
+
+  const positions = {};
+
+  // 1. START: top 15%, x: 80–310
+  for (const nd of templateNodes) {
+    if (nd.type !== 'START') continue;
+    const p = tryPlace(80, 310, yMin, topEnd);
+    placed.push({ id: nd.id, ...p });
+    positions[nd.id] = p;
+  }
+
+  // 2. Middle nodes: grid-zone layout (seeded column/row shuffle)
+  const midNodes = templateNodes.filter(n => n.type !== 'START' && n.type !== 'GOAL');
+  const count    = midNodes.length;
+  const cols     = count <= 4 ? 2 : 3;
+  const rows     = Math.ceil(count / cols);
+
+  // Seeded Fisher-Yates shuffle of slot indices
+  const idxArr = Array.from({ length: count }, (_, i) => i);
+  for (let i = idxArr.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [idxArr[i], idxArr[j]] = [idxArr[j], idxArr[i]];
+  }
+
+  midNodes.forEach((nd, i) => {
+    const slot = idxArr[i];
+    const col  = slot % cols;
+    const row  = Math.floor(slot / cols);
+    const p    = tryPlaceInCell(col, cols, row, rows);
+    placed.push({ id: nd.id, ...p });
+    positions[nd.id] = p;
+  });
+
+  // 3. GOAL: bottom 15%, x: 80–310
+  for (const nd of templateNodes) {
+    if (nd.type !== 'GOAL') continue;
+    const p = tryPlace(80, 310, midEnd, yMax);
+    placed.push({ id: nd.id, ...p });
+    positions[nd.id] = p;
+  }
+
+  return positions;
+}
+
+function generateMazeData(level) {
+  const template = getMazeTemplate(level);
+  const cfg      = getDifficultyConfig(level);
+  const winSet   = new Set(template.winPath);
+
+  const winNumIds  = template.winPath.filter(id => template.nodes.find(n=>n.id===id)?.type === 'NUMBER');
+  const winOpIds   = template.winPath.filter(id => template.nodes.find(n=>n.id===id)?.type === 'OPERATOR');
+  const deadNumIds = template.nodes.filter(n=>n.type==='NUMBER'   && !winSet.has(n.id)).map(n=>n.id);
+  const deadOpIds  = template.nodes.filter(n=>n.type==='OPERATOR' && !winSet.has(n.id)).map(n=>n.id);
+
+  let target = null, nodeValues = {}, attempts = 0;
+  do {
+    const winNums = winNumIds.map(() => generateOneNumber(cfg));
+    const winOps  = winOpIds .map(() => cfg.operators[rng(0, cfg.operators.length-1)]);
+    target = evaluateSequence(winNums, winOps);
+    if (target !== null && target > 0) {
+      nodeValues = {};
+      winNumIds .forEach((id,i) => { nodeValues[id] = winNums[i]; });
+      winOpIds  .forEach((id,i) => { nodeValues[id] = winOps[i];  });
+      deadNumIds.forEach(id     => { nodeValues[id] = generateOneNumber(cfg); });
+      deadOpIds .forEach(id     => { nodeValues[id] = cfg.operators[rng(0,cfg.operators.length-1)]; });
+    }
+    attempts++;
+  } while ((target === null || target <= 0) && attempts < 30);
+
+  if (target === null || target <= 0)
+    target = round2(winNumIds.reduce((s,id) => s+(nodeValues[id]??1), 0));
+
+  // Scatter positions — deterministic per level, ignores template hard-coded coords
+  const scatter = scatterNodes(template.nodes, level);
+  const nodes = template.nodes.map(nd => {
+    const value = nd.type==='START' ? 'S' : nd.type==='GOAL' ? 'G' : nodeValues[nd.id];
+    const pos   = scatter[nd.id] || { x: nd.x, y: nd.y };
+    return new MazeNode(nd.id, nd.type, value, pos.x, pos.y, [...nd.connections]);
+  });
+  return new Maze(level, nodes, round2(target), template.winPath);
+}
+
+function getMazeLayout(level) {
+  return getMazeTemplate(level).nodes.map(({id,type,x,y,connections}) => ({id,type,x,y,connections}));
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHUNK 3 — SVG RENDERER
+// ════════════════════════════════════════════════════════════════════════════
+
+const R  = 28;
+const R2 = R * 2;
+
+const CLR = {
+  bg:           '#0A0F1E',
+  trackOuter:   '#060C18',
+  trackInner:   '#1E3A6E',
+  trackHiOuter: '#0D2240',
+  trackHiInner: '#7DD3FC',
+  number:   { fill:'#2563EB', stroke:'#93C5FD' },
+  operator: { fill:'#EA580C', stroke:'#FED7AA' },
+  start:    { fill:'#15803D', stroke:'#86EFAC' },
+  goal:     { fill:'#6D28D9', stroke:'#C4B5FD' },
+  // used-number muted palette
+  numUsed:  { fill:'#1A2A48', stroke:'#2A3D60', text:'#3D5070' },
+};
+
+function opSymbol(op) { return {'+':'+', '-':'−', '*':'×', '/':'÷'}[op] ?? op; }
+
+function numFS(val) {
+  const l = String(val).length;
+  return l <= 2 ? 19 : l <= 4 ? 15 : 14;   // min 14px per typography spec
+}
+
+// nodeMarkup accepts optional `used` flag for grayed-out state
+function nodeMarkup(node, used = false) {
+  const { x, y, type, value } = node;
+
+  if (type === 'NUMBER') {
+    const c = used ? CLR.numUsed : CLR.number;
+    return `<circle cx="${x}" cy="${y}" r="${R}" fill="${c.fill}" stroke="${c.stroke}" stroke-width="2.5"/>
+            <text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central"
+                  fill="${used ? CLR.numUsed.text : 'white'}" font-size="${numFS(value)}" font-weight="bold"
+                  font-family="ui-monospace,'Courier New',monospace" pointer-events="none">${value}</text>`;
+  }
+  if (type === 'OPERATOR') {
+    const c = CLR.operator;
+    return `<polygon points="${x},${y-R} ${x+R},${y} ${x},${y+R} ${x-R},${y}"
+                     fill="${c.fill}" stroke="${c.stroke}" stroke-width="2.5"/>
+            <text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central"
+                  fill="white" font-size="23" font-weight="bold"
+                  font-family="system-ui,-apple-system,sans-serif" pointer-events="none">${opSymbol(value)}</text>`;
+  }
+  if (type === 'START') {
+    const c = CLR.start;
+    return `<rect x="${x-R}" y="${y-R}" width="${R2}" height="${R2}" rx="10"
+                  fill="${c.fill}" stroke="${c.stroke}" stroke-width="2.5"/>
+            <text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central"
+                  fill="white" font-size="11" font-weight="800" letter-spacing="1"
+                  font-family="system-ui,-apple-system,sans-serif" pointer-events="none">START</text>`;
+  }
+  if (type === 'GOAL') {
+    const c = CLR.goal;
+    return `<rect x="${x-R-5}" y="${y-R-5}" width="${R2+10}" height="${R2+10}" rx="14"
+                  fill="none" stroke="${c.stroke}" stroke-width="1.5" opacity="0.45"/>
+            <rect x="${x-R}" y="${y-R}" width="${R2}" height="${R2}" rx="10"
+                  fill="${c.fill}" stroke="${c.stroke}" stroke-width="2.5"/>
+            <text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="central"
+                  fill="white" font-size="12" font-weight="800" letter-spacing="1"
+                  font-family="system-ui,-apple-system,sans-serif" pointer-events="none">GOAL</text>`;
+  }
+  return '';
+}
+
+function renderMaze(maze) {
+  // Connections exist in data (for ball movement + direction logic) but are
+  // NOT rendered visually — player sees only floating nodes.
+  // Empty <g> elements are kept so setTrackHighlight() can find them safely.
+  const tracks = maze.nodes.flatMap(node =>
+    node.connections.map(connId => {
+      const t = maze.getNode(connId);
+      if (!t) return '';
+      return `<g id="conn-${node.id}-${connId}"></g>`;
+    })
+  ).join('');
+
+  // Each node wrapped in <g id="node-{id}"> so Chunk 6 can update appearance
+  const nodeSVG = maze.nodes
+    .map(n => `<g id="node-${n.id}">${nodeMarkup(n)}</g>`)
+    .join('');
+
+  document.getElementById('maze-svg').innerHTML = `
+    <defs>
+      <radialGradient id="bgGlow" cx="50%" cy="35%" r="60%">
+        <stop offset="0%"   stop-color="#1A2E50"/>
+        <stop offset="100%" stop-color="${CLR.bg}"/>
+      </radialGradient>
+      <filter id="node-shadow" x="-35%" y="-35%" width="170%" height="170%">
+        <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.6"/>
+      </filter>
+      <filter id="ball-glow-snap" x="-100%" y="-100%" width="300%" height="300%">
+        <feDropShadow dx="0" dy="0" stdDeviation="12" flood-color="white" flood-opacity="0.9"/>
+      </filter>
+      <filter id="ball-glow-move" x="-50%" y="-50%" width="200%" height="200%">
+        <feDropShadow dx="0" dy="1" stdDeviation="5" flood-color="white" flood-opacity="0.45"/>
+      </filter>
+      <filter id="ball-glow-bounce" x="-80%" y="-80%" width="260%" height="260%">
+        <feDropShadow dx="0" dy="0" stdDeviation="10" flood-color="#EF4444" flood-opacity="0.8"/>
+      </filter>
+      <filter id="hint-glow" x="-70%" y="-70%" width="240%" height="240%">
+        <feDropShadow dx="0" dy="0" stdDeviation="9" flood-color="#F59E0B" flood-opacity="0.75"/>
+      </filter>
+    </defs>
+
+    <rect width="390" height="764" fill="${CLR.bg}"/>
+    <rect width="390" height="764" fill="url(#bgGlow)"/>
+    <g id="tracks">${tracks}</g>
+    <g id="nodes" filter="url(#node-shadow)">${nodeSVG}</g>
+    <g id="hint-layer"></g>
+    <g id="ball-layer"></g>
+    <g id="particle-layer"></g>
+  `;
+}
+
+function setTrackHighlight(fromId, toId, on) {
+  const g = document.getElementById(`conn-${fromId}-${toId}`);
+  if (!g) return;
+  const lines = g.querySelectorAll('line');
+  if (lines.length < 2) return;
+  lines[0].setAttribute('stroke', on ? CLR.trackHiOuter : CLR.trackOuter);
+  lines[0].setAttribute('stroke-width', on ? '14' : '12');
+  lines[1].setAttribute('stroke', on ? CLR.trackHiInner : CLR.trackInner);
+  lines[1].setAttribute('stroke-width', on ? '9'  : '6');
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHUNK 4 — BALL OBJECT + PATH CONSTRAINT SYSTEM
+// ════════════════════════════════════════════════════════════════════════════
+
+const BALL_SPEED = 240;
+const SNAP_DIST  = 15;
+
+const ball = {
+  x: 0, y: 0,
+  nodeId:       null,
+  targetNodeId: null,
+  prevNodeId:   null,
+  moving:       false,
+  bouncing:     false,   // true while returning from a rejected node
+};
+
+let rafId       = null;
+let lastTime    = null;
+let currentMaze = null;
+
+function initBall(maze) {
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+  lastTime = null;
+
+  const start       = maze.getNode('start');
+  ball.x            = start.x;
+  ball.y            = start.y;
+  ball.nodeId       = 'start';
+  ball.targetNodeId = null;
+  ball.prevNodeId   = null;
+  ball.moving       = false;
+  ball.bouncing     = false;
+
+  const layer = document.getElementById('ball-layer');
+  if (!layer) return;
+  layer.innerHTML = `
+    <circle id="ball-main" cx="${ball.x}" cy="${ball.y}" r="22"
+            fill="white" stroke="#0A0F1E" stroke-width="3"
+            filter="url(#ball-glow-snap)"/>`;
+}
+
+function updateBallVisual(state) {
+  // state: 'snap' | 'move' | 'bounce'
+  const el = document.getElementById('ball-main');
+  if (!el) return;
+  el.setAttribute('cx', ball.x.toFixed(2));
+  el.setAttribute('cy', ball.y.toFixed(2));
+  const f = state === 'snap'   ? 'url(#ball-glow-snap)'
+          : state === 'bounce' ? 'url(#ball-glow-bounce)'
+          :                      'url(#ball-glow-move)';
+  el.setAttribute('filter', f);
+}
+
+function findTargetInDirection(maze, nodeId, dir) {
+  const current = maze.getNode(nodeId);
+  if (!current) return null;
+  let bestNode = null, bestDot = 0;
+  for (const connId of current.connections) {
+    const conn = maze.getNode(connId);
+    if (!conn) continue;
+    const dx = conn.x - current.x, dy = conn.y - current.y;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    if (len === 0) continue;
+    const dot = (dx/len)*dir.dx + (dy/len)*dir.dy;
+    if (dot > bestDot) { bestDot = dot; bestNode = conn; }
+  }
+  return bestNode;
+}
+
+function startMoving(targetNodeId) {
+  if (ball.moving) return;
+  pushUndoState();          // save state before each move for undo support
+  ball.prevNodeId   = ball.nodeId;
+  ball.targetNodeId = targetNodeId;
+  ball.moving       = true;
+  lastTime          = null;
+  setTrackHighlight(ball.prevNodeId, targetNodeId, true);
+  rafId = requestAnimationFrame(animateBall);
+}
+
+// startBounce: slide ball back to `returnTo` without rule checks.
+// Called by handleViolation after a rejected arrival.
+function startBounce(arrivedId, returnTo) {
+  if (ball.moving) return;
+  ball.prevNodeId   = arrivedId;   // "from" during this reverse slide
+  ball.targetNodeId = returnTo;
+  ball.moving       = true;
+  ball.bouncing     = true;
+  lastTime          = null;
+  currentBallSpeed  = BALL_SPEED * 1.6;  // snappy return
+  rafId = requestAnimationFrame(animateBall);
+}
+
+function animateBall(timestamp) {
+  if (!ball.moving) return;
+  if (lastTime === null) lastTime = timestamp;
+  const dt   = Math.min((timestamp - lastTime) / 1000, 0.05);
+  lastTime   = timestamp;
+
+  const target = currentMaze.getNode(ball.targetNodeId);
+  const dx     = target.x - ball.x;
+  const dy     = target.y - ball.y;
+  const dist   = Math.sqrt(dx*dx + dy*dy);
+  const step   = currentBallSpeed * dt;
+
+  if (dist <= SNAP_DIST || step >= dist) {
+    // ── SNAP ─────────────────────────────────────────────────────────────
+    ball.x = target.x;
+    ball.y = target.y;
+
+    const from       = ball.prevNodeId;
+    const arrived    = ball.targetNodeId;
+    const wasBounce  = ball.bouncing;
+
+    ball.nodeId       = arrived;
+    ball.targetNodeId = null;
+    ball.prevNodeId   = null;
+    ball.moving       = false;
+    ball.bouncing     = false;
+    rafId             = null;
+
+    setTrackHighlight(from, arrived, false);
+    updateBallVisual('snap');
+
+    const node = currentMaze.getNode(arrived);
+    console.log(`[Ball] ${wasBounce?'bounced→':'snapped→'} ${arrived}  type=${node.type}  value=${node.value}`);
+
+    if (wasBounce) {
+      // Finished bouncing back — resume tilt chaining from the safe node
+      onBallSnapped(arrived, node);
+    } else {
+      // Normal arrival — run rule checks
+      const violation = checkArrivalRules(arrived);
+      if (violation) {
+        handleViolation(arrived, from, violation);
+      } else {
+        acceptArrival(arrived);
+        onBallSnapped(arrived, node);
+      }
+    }
+
+  } else {
+    // ── SLIDE ─────────────────────────────────────────────────────────────
+    ball.x += (dx / dist) * step;
+    ball.y += (dy / dist) * step;
+    updateBallVisual(ball.bouncing ? 'bounce' : 'move');
+    rafId = requestAnimationFrame(animateBall);
+  }
+}
+
+const KEY_DIRS = {
+  ArrowUp:    { dx:  0, dy: -1 },
+  ArrowDown:  { dx:  0, dy:  1 },
+  ArrowLeft:  { dx: -1, dy:  0 },
+  ArrowRight: { dx:  1, dy:  0 },
+};
+
+document.addEventListener('keydown', e => {
+  const dir = KEY_DIRS[e.key];
+  if (!dir) return;
+  e.preventDefault();
+  if (ball.moving || !currentMaze) return;
+  currentBallSpeed = BALL_SPEED;
+  const target = findTargetInDirection(currentMaze, ball.nodeId, dir);
+  if (target) startMoving(target.id);
+});
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHUNK 5 — TILT CONTROLS + DEVICE SUPPORT
+// ════════════════════════════════════════════════════════════════════════════
+
+const TILT_THRESHOLD = 10;
+const TILT_MAX       = 45;
+const BALL_SPEED_MIN = 140;
+const BALL_SPEED_MAX = 520;
+
+let currentBallSpeed = BALL_SPEED;
+let tiltEnabled      = false;
+let tiltActive       = false;
+let tiltValidated    = false;   // true once first real (non-null, non-zero) orientation event fires
+let tiltValidTimer   = null;    // 2-second fallback timer — shows D-pad if no tilt data arrives
+let tiltLogTime      = 0;       // throttle per-frame console logs to ≤1/s
+let betaBaseline     = null;
+const CALIB_SAMPLES  = 5;
+let betaSamples      = [];
+let lastGamma        = 0;
+let lastBeta         = null;
+
+function scaleTiltSpeed(angleDeg) {
+  const t = Math.min((angleDeg - TILT_THRESHOLD) / (TILT_MAX - TILT_THRESHOLD), 1);
+  return BALL_SPEED_MIN + t * (BALL_SPEED_MAX - BALL_SPEED_MIN);
+}
+
+function onBallSnapped(arrivedId) {
+  if (!tiltActive || !tiltEnabled || bounceOutCooldown) return;
+  const tiltLR = lastGamma;
+  const tiltFB = (lastBeta !== null && betaBaseline !== null) ? lastBeta - betaBaseline : 0;
+  const absLR  = Math.abs(tiltLR), absFB = Math.abs(tiltFB);
+  let dir;
+  if (absLR >= absFB && absLR >= TILT_THRESHOLD) {
+    dir = tiltLR < 0 ? KEY_DIRS.ArrowLeft : KEY_DIRS.ArrowRight;
+    currentBallSpeed = scaleTiltSpeed(absLR);
+  } else if (absFB >= TILT_THRESHOLD) {
+    dir = tiltFB < 0 ? KEY_DIRS.ArrowUp : KEY_DIRS.ArrowDown;
+    currentBallSpeed = scaleTiltSpeed(absFB);
+  } else { return; }
+  const target = findTargetInDirection(currentMaze, arrivedId, dir);
+  if (target) startMoving(target.id);
+}
+
+function handleOrientation(e) {
+  const gamma = e.gamma ?? 0, beta = e.beta ?? 0;
+  lastGamma = gamma; lastBeta = beta;
+
+  // ── Validity check: confirm sensor is delivering real data ────────────────
+  // (null or exactly-zero values = sensor absent / permission denied / desktop)
+  if (!tiltValidated) {
+    if (e.gamma !== null && e.beta !== null &&
+        (Math.abs(e.gamma) > 0.05 || Math.abs(e.beta) > 0.05)) {
+      tiltValidated = true;
+      if (tiltValidTimer !== null) { clearTimeout(tiltValidTimer); tiltValidTimer = null; }
+      hideDpad();   // real tilt confirmed — no need for on-screen buttons
+      console.log(`[Tilt] Tilt active: gamma=${e.gamma.toFixed(2)} beta=${e.beta.toFixed(2)}`);
+    }
+    if (!tiltValidated) return;   // still waiting for first real event
+  }
+
+  // ── Per-frame debug log (throttled to ≤1 per second) ─────────────────────
+  const now = Date.now();
+  if (now - tiltLogTime >= 1000) {
+    tiltLogTime = now;
+    console.log(`[Tilt] gamma=${gamma.toFixed(2)} beta=${beta.toFixed(2)}`);
+  }
+
+  // ── Beta baseline calibration ─────────────────────────────────────────────
+  if (betaBaseline === null) {
+    betaSamples.push(beta);
+    if (betaSamples.length >= CALIB_SAMPLES)
+      betaBaseline = betaSamples.reduce((a, b) => a + b, 0) / betaSamples.length;
+    return;
+  }
+
+  const tiltLR = gamma, tiltFB = beta - betaBaseline;
+  const absLR  = Math.abs(tiltLR), absFB = Math.abs(tiltFB);
+
+  if (!tiltActive && (absLR >= TILT_THRESHOLD || absFB >= TILT_THRESHOLD)) {
+    tiltActive = true;
+    hideDpad();
+  }
+  if (!tiltActive || ball.moving || !currentMaze || bounceOutCooldown) return;
+
+  let dir;
+  if (absLR >= absFB && absLR >= TILT_THRESHOLD) {
+    dir = tiltLR < 0 ? KEY_DIRS.ArrowLeft : KEY_DIRS.ArrowRight;
+    currentBallSpeed = scaleTiltSpeed(absLR);
+  } else if (absFB >= TILT_THRESHOLD) {
+    dir = tiltFB < 0 ? KEY_DIRS.ArrowUp : KEY_DIRS.ArrowDown;
+    currentBallSpeed = scaleTiltSpeed(absFB);
+  } else { return; }
+
+  const target = findTargetInDirection(currentMaze, ball.nodeId, dir);
+  if (target) startMoving(target.id);
+}
+
+function enableTilt() {
+  if (tiltEnabled) return;
+  // Must register inside a user gesture:
+  //   • iOS: only fires after requestPermission() is granted inside a gesture
+  //   • Android Chrome: addEventListener must be called inside a gesture context
+  window.addEventListener('deviceorientation', handleOrientation, { passive: true });
+  tiltEnabled = true;
+}
+
+// Start a 2-second timer; if no valid sensor data arrives, fall back to D-pad
+function startTiltValidation() {
+  if (tiltValidated || tiltValidTimer !== null) return;
+  tiltValidTimer = setTimeout(() => {
+    tiltValidTimer = null;
+    if (!tiltValidated) {
+      console.log('[Tilt] No valid orientation data in 2s — showing D-pad fallback');
+      showDpad();
+    }
+  }, 2000);
+}
+
+function needsTiltPermission() {
+  return typeof DeviceOrientationEvent !== 'undefined' &&
+         typeof DeviceOrientationEvent.requestPermission === 'function';
+}
+function hasTiltAPI() { return typeof DeviceOrientationEvent !== 'undefined'; }
+
+function showStartOverlay() { document.getElementById('start-overlay').classList.remove('hidden'); }
+function hideStartOverlay() { document.getElementById('start-overlay').classList.add('hidden'); }
+function showDpad()         { document.getElementById('dpad').classList.remove('hidden'); }
+function hideDpad()         { document.getElementById('dpad').classList.add('hidden'); }
+
+['up','down','left','right'].forEach(d => {
+  const key = 'Arrow' + d[0].toUpperCase() + d.slice(1);
+  const btn = document.getElementById('dpad-' + d);
+  if (!btn) return;
+  btn.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (ball.moving || !currentMaze) return;
+    currentBallSpeed = BALL_SPEED;
+    const target = findTargetInDirection(currentMaze, ball.nodeId, KEY_DIRS[key]);
+    if (target) startMoving(target.id);
+  });
+});
+
+// "Tap to Start" — gesture gate: unlock AudioContext + register tilt listener
+document.getElementById('start-tap-btn').addEventListener('click', async () => {
+  getAudio();   // unlock AudioContext inside gesture
+
+  if (needsTiltPermission()) {
+    // iOS Safari: requestPermission() MUST be called inside a user gesture
+    try {
+      const result = await DeviceOrientationEvent.requestPermission();
+      if (result === 'granted') {
+        enableTilt();
+        startTiltValidation();   // 2s window: confirm real data or fall back to D-pad
+      } else {
+        showDpad();              // permission denied → show D-pad immediately
+      }
+    } catch {
+      showDpad();
+    }
+  } else if (hasTiltAPI()) {
+    // Android Chrome + others: register inside gesture, then wait 2s for first event
+    enableTilt();
+    startTiltValidation();       // 2s window: confirm real data or fall back to D-pad
+  } else {
+    // Desktop / no gyro — keyboard + D-pad only
+    showDpad();
+  }
+
+  hideStartOverlay();
+});
+
+// "Use Buttons / Arrow Keys" — skip tilt entirely
+document.getElementById('start-keys-btn').addEventListener('click', () => {
+  getAudio();
+  showDpad();
+  hideStartOverlay();
+});
+
+function setupControls() {
+  // Always show the start overlay on first load.
+  // It serves as the universal gesture gate for AudioContext + DeviceOrientation.
+  showStartOverlay();
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHUNK 6 — RULE ENGINE
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Rule state ────────────────────────────────────────────────────────────────
+let selectionTracker   = [];   // ordered list of accepted node IDs
+let usedNumbers        = new Set(); // IDs of NUMBER nodes already collected
+let winPathNumberCount = 0;    // how many NUMBERs needed before GOAL unlocks
+let bounceOutCooldown  = false;// blocks input briefly after a rejection bounce
+let bounceTimer        = null;
+let toastTimer         = null;
+
+// ── Undo / Redo state ─────────────────────────────────────────────────────────
+const MAX_HISTORY = 5;
+let undoStack = [];   // array of snapshots (oldest first)
+let redoStack = [];   // array of snapshots (oldest first)
+
+// ── Initialise rules for a new level ─────────────────────────────────────────
+function initRules(maze) {
+  selectionTracker   = ['start'];
+  usedNumbers        = new Set();
+  bounceOutCooldown  = false;
+  clearTimeout(bounceTimer);
+  clearTimeout(toastTimer);
+  winPathNumberCount = maze.winPath
+    .filter(id => maze.getNode(id)?.type === 'NUMBER')
+    .length;
+  console.log(`[Rules] init  winPathNumbers=${winPathNumberCount}  level=${maze.level}`);
+}
+
+// ── Determine which node type is expected next ────────────────────────────────
+// Sequence: (START) → NUMBER → OPERATOR → NUMBER → OPERATOR → … → GOAL
+function getExpectedType() {
+  // Look at the last meaningful (non-START) accepted node
+  const meaningful = selectionTracker
+    .map(id => currentMaze.getNode(id))
+    .filter(n => n && n.type !== 'START' && n.type !== 'GOAL');
+  if (meaningful.length === 0) return 'NUMBER';               // first move after START
+  const lastType = meaningful[meaningful.length - 1].type;
+  return lastType === 'NUMBER' ? 'OPERATOR' : 'NUMBER';
+}
+
+// ── Validate an arrival ───────────────────────────────────────────────────────
+// Returns null (accept) or a violation string: 'wrong-type' | 'reuse' | 'goal-early'
+function checkArrivalRules(arrivedId) {
+  const node = currentMaze.getNode(arrivedId);
+  if (!node || node.type === 'START') return null;
+
+  // GOAL: all required numbers must have been collected
+  if (node.type === 'GOAL') {
+    return usedNumbers.size < winPathNumberCount ? 'goal-early' : null;
+  }
+
+  // Type-sequence check (GOAL bypasses this)
+  const expected = getExpectedType();
+  if (node.type !== expected) return 'wrong-type';
+
+  // Number-reuse check
+  if (node.type === 'NUMBER' && usedNumbers.has(arrivedId)) return 'reuse';
+
+  return null;
+}
+
+// ── Accept a valid arrival ────────────────────────────────────────────────────
+function acceptArrival(arrivedId) {
+  const node = currentMaze.getNode(arrivedId);
+  if (!node || node.type === 'START') return;
+
+  selectionTracker.push(arrivedId);
+
+  if (node.type === 'NUMBER') {
+    usedNumbers.add(arrivedId);
+    setNodeUsedVisual(arrivedId);
+    playSound('number');
+    pulseNode(arrivedId);
+    if (usedNumbers.size === winPathNumberCount) playSound('chime');
+  } else if (node.type === 'OPERATOR') {
+    playSound('operator');
+    pulseNode(arrivedId);
+  }
+
+  console.log(`[Rules] ✓ ${arrivedId}  path=${selectionTracker.join('→')}  nums=${usedNumbers.size}/${winPathNumberCount}`);
+
+  // Update live equation display for every accepted node
+  if (node.type !== 'GOAL') {
+    updateEquationDisplay();
+  } else {
+    // GOAL reached — evaluate and dispatch win / wrong-result
+    handleGoalArrival();
+  }
+}
+
+// ── Handle a rule violation ───────────────────────────────────────────────────
+function handleViolation(arrivedId, returnTo, violationType) {
+  console.log(`[Rules] ✗ ${arrivedId}  violation=${violationType}`);
+
+  playSound('bounce');
+
+  bounceOutCooldown = true;
+  clearTimeout(bounceTimer);
+  bounceTimer = setTimeout(() => { bounceOutCooldown = false; }, 520);
+
+  flashNodeRed(arrivedId);
+  if (violationType === 'goal-early') showToast('Use all numbers first!');
+
+  startBounce(arrivedId, returnTo);
+}
+
+// ── Visual helpers ────────────────────────────────────────────────────────────
+
+// Gray out a visited NUMBER node in the SVG
+function setNodeUsedVisual(nodeId) {
+  const g = document.getElementById(`node-${nodeId}`);
+  if (!g) return;
+  const node = currentMaze.getNode(nodeId);
+  if (!node) return;
+  // Re-render with `used = true` flag
+  g.innerHTML = nodeMarkup(node, true);
+}
+
+// Restore a node to its default appearance
+function setNodeVisualDefault(nodeId) {
+  const g = document.getElementById(`node-${nodeId}`);
+  if (!g) return;
+  const node = currentMaze.getNode(nodeId);
+  if (!node) return;
+  g.innerHTML = nodeMarkup(node, false);
+}
+
+// Brief red fill flash on the rejected node
+function flashNodeRed(nodeId) {
+  const g = document.getElementById(`node-${nodeId}`);
+  if (!g) return;
+  const shape = g.querySelector('circle, polygon, rect');
+  if (!shape) return;
+  const origFill = shape.getAttribute('fill');
+  shape.setAttribute('fill', '#DC2626');
+  setTimeout(() => {
+    if (shape.isConnected) shape.setAttribute('fill', origFill);
+  }, 320);
+}
+
+// ── Toast notification ────────────────────────────────────────────────────────
+function showToast(msg, duration = 1800) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ── Reset the current level ───────────────────────────────────────────────────
+function resetLevel() {
+  if (!currentMaze) return;
+
+  // Cancel any in-flight animation
+  if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+  ball.moving   = false;
+  ball.bouncing = false;
+
+  // Restore all node visuals before re-running initRules
+  currentMaze.nodes.forEach(n => setNodeVisualDefault(n.id));
+
+  // Clear rule state
+  initRules(currentMaze);
+
+  // Return ball to START
+  initBall(currentMaze);
+
+  // Clear any lingering toast
+  document.getElementById('toast').classList.remove('show');
+
+  // Hide win overlay if open
+  document.getElementById('win-overlay').classList.add('hidden');
+
+  // Cancel any active hint ring
+  clearHintHighlight();
+
+  // Reset equation bar
+  updateEquationDisplay();
+
+  // Clear undo/redo history on reset
+  undoStack = []; redoStack = [];
+  updateUndoRedoBtns();
+
+  console.log('[Rules] Level reset');
+}
+
+document.getElementById('reset-btn').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  resetLevel();
+});
+
+// ── Undo / Redo helpers ───────────────────────────────────────────────────────
+
+// Capture a lightweight snapshot of the current game state
+function snapshotState() {
+  return {
+    selectionTracker: [...selectionTracker],
+    ballNodeId:       ball.nodeId,
+    usedNodeIds:      new Set(usedNumbers),
+  };
+}
+
+// Restore game state from a snapshot (moves ball, repaints nodes, refreshes UI)
+function restoreState(snap) {
+  // Restore rule state
+  selectionTracker = [...snap.selectionTracker];
+  usedNumbers      = new Set(snap.usedNodeIds);
+
+  // Repaint all nodes: clear first, then re-apply "used" markers
+  currentMaze.nodes.forEach(n => setNodeVisualDefault(n.id));
+  usedNumbers.forEach(id => setNodeUsedVisual(id));
+
+  // Teleport ball to saved position (no animation on undo/redo)
+  const node = currentMaze.getNode(snap.ballNodeId);
+  if (node) {
+    ball.nodeId  = snap.ballNodeId;
+    ball.x       = node.x;
+    ball.y       = node.y;
+    ball.moving  = false;
+    ball.bouncing = false;
+    if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+    updateBallVisual('snap');
+  }
+
+  updateEquationDisplay();
+  updateUndoRedoBtns();
+}
+
+// Push current state to undoStack before a move; clear redo history
+function pushUndoState() {
+  undoStack.push(snapshotState());
+  if (undoStack.length > MAX_HISTORY) undoStack.shift();
+  redoStack = [];
+  updateUndoRedoBtns();
+}
+
+function undo() {
+  if (undoStack.length === 0 || ball.moving) return;
+  redoStack.push(snapshotState());
+  if (redoStack.length > MAX_HISTORY) redoStack.shift();
+  restoreState(undoStack.pop());
+}
+
+function redo() {
+  if (redoStack.length === 0 || ball.moving) return;
+  undoStack.push(snapshotState());
+  if (undoStack.length > MAX_HISTORY) undoStack.shift();
+  restoreState(redoStack.pop());
+}
+
+function updateUndoRedoBtns() {
+  const u = document.getElementById('undo-btn');
+  const r = document.getElementById('redo-btn');
+  if (u) u.disabled = undoStack.length === 0;
+  if (r) r.disabled = redoStack.length === 0;
+}
+
+document.getElementById('undo-btn').addEventListener('pointerdown', e => {
+  e.preventDefault(); undo();
+});
+document.getElementById('redo-btn').addEventListener('pointerdown', e => {
+  e.preventDefault(); redo();
+});
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHUNK 7 — EQUATION BUILDER & WIN LOGIC
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Build display string from the current selectionTracker ───────────────────
+// Returns e.g. "3 + 5 × 2 = ?" while in progress
+function buildEquationString() {
+  const parts = [];
+  for (const id of selectionTracker) {
+    const n = currentMaze?.getNode(id);
+    if (!n || n.type === 'START' || n.type === 'GOAL') continue;
+    parts.push(n.type === 'NUMBER' ? String(n.value) : opSymbol(n.value));
+  }
+  if (parts.length === 0) return '?';
+  return parts.join(' ') + ' = ?';
+}
+
+// ── Update the #eq-bar display (called after every accepted arrival) ─────────
+function updateEquationDisplay(state = 'normal') {
+  const el = document.getElementById('eq-text');
+  if (!el) return;
+  el.textContent = buildEquationString();
+  el.classList.remove('win', 'miss');
+  if (state === 'win')  el.classList.add('win');
+  if (state === 'miss') el.classList.add('miss');
+}
+
+// ── Show the win overlay with the solved equation and result ─────────────────
+function showWinOverlay(equationStr, result) {
+  document.getElementById('win-equation').textContent = equationStr;
+  document.getElementById('win-result').textContent   = String(result);
+
+  // Star rating based on hints used on this level
+  const stars = hintsUsedThisLevel === 0 ? '⭐⭐⭐'
+              : hintsUsedThisLevel <= 2  ? '⭐⭐'
+              : '⭐';
+  document.getElementById('win-stars').textContent = stars;
+
+  // Adapt button for last level
+  const isLast = currentLevel >= 10;
+  const btn = document.getElementById('win-next-btn');
+  btn.textContent = isLast ? 'Play Again ↺' : 'Next Level →';
+
+  // Trigger card re-animation by forcing a reflow
+  const card = document.getElementById('win-card');
+  card.style.animation = 'none';
+  card.getBoundingClientRect();   // flush
+  card.style.animation = '';
+
+  document.getElementById('win-overlay').classList.remove('hidden');
+}
+
+// ── Handle a wrong answer at GOAL (correct path count, wrong result) ─────────
+function handleWrongResult(equationStr, result) {
+  // Show the eq-bar in red briefly, toast message, then reset
+  const el = document.getElementById('eq-text');
+  if (el) {
+    el.textContent = equationStr;
+    el.classList.remove('win', 'miss');
+    el.classList.add('miss');
+  }
+  showToast(`${result} ≠ ${currentMaze.target} — Try again!`, 2000);
+  setTimeout(() => resetLevel(), 950);
+}
+
+// ── Evaluate the numbers+operators accumulated in selectionTracker ───────────
+function evaluateCurrentPath() {
+  const nums = [], ops = [];
+  for (const id of selectionTracker) {
+    const n = currentMaze?.getNode(id);
+    if (!n || n.type === 'START' || n.type === 'GOAL') continue;
+    if (n.type === 'NUMBER')   nums.push(n.value);
+    if (n.type === 'OPERATOR') ops.push(n.value);
+  }
+  return evaluateSequence(nums, ops);
+}
+
+// ── Called from acceptArrival when ball reaches GOAL ────────────────────────
+function handleGoalArrival() {
+  const result = evaluateCurrentPath();
+
+  // Build the completed display string "3 + 5 × 2 = 16"
+  const parts = [];
+  for (const id of selectionTracker) {
+    const n = currentMaze.getNode(id);
+    if (!n || n.type === 'START' || n.type === 'GOAL') continue;
+    parts.push(n.type === 'NUMBER' ? String(n.value) : opSymbol(n.value));
+  }
+  const resultStr  = result !== null ? String(result) : '?';
+  const equationStr = parts.join(' ') + ' = ' + resultStr;
+
+  console.log(`[Win] equation="${equationStr}"  result=${result}  target=${currentMaze.target}`);
+
+  if (result !== null && Math.abs(result - currentMaze.target) < 0.001) {
+    // ── WIN ──────────────────────────────────────────────────────────────────
+    // Update eq-bar to show the solved equation in green
+    const el = document.getElementById('eq-text');
+    if (el) {
+      el.textContent = equationStr;
+      el.classList.remove('win', 'miss');
+      el.classList.add('win');
+    }
+    playSound('win');
+    particleBurst();
+    setTimeout(() => showWinOverlay(equationStr, result), 300);
+  } else {
+    // ── WRONG RESULT ─────────────────────────────────────────────────────────
+    playSound('bounce');
+    handleWrongResult(equationStr, resultStr);
+  }
+}
+
+// ── Win-overlay "Next Level" / "Play Again" button ───────────────────────────
+document.getElementById('win-next-btn').addEventListener('click', () => {
+  document.getElementById('win-overlay').classList.add('hidden');
+  if (currentLevel >= 10) {
+    loadLevel(1);                 // cycle back to level 1 after completing all
+  } else {
+    loadLevel(currentLevel + 1);
+  }
+});
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHUNK 8 — HINT SYSTEM
+// ════════════════════════════════════════════════════════════════════════════
+
+let hintsRemaining    = 3;   // shared across all levels, never resets
+let hintsUsedThisLevel = 0;  // resets each time a new level loads (not on reset)
+let hintTimer         = null;
+let hintHighlightId   = null;
+
+// ── Update button label + disabled state ─────────────────────────────────────
+function updateHintBtn() {
+  const btn = document.getElementById('hint-btn');
+  if (!btn) return;
+  btn.textContent = `🔍 ×${hintsRemaining}`;
+  btn.disabled    = hintsRemaining <= 0;
+  btn.title       = hintsRemaining > 0
+    ? `Use a hint (${hintsRemaining} remaining)`
+    : 'No hints remaining';
+}
+
+// ── Determine which win-path node to show as the hint ────────────────────────
+// Strategy: walk winPath and advance winIdx every time a tracker entry matches
+// the current winPath position — this correctly skips dead-end acceptances.
+function computeHintNodeId() {
+  if (!currentMaze) return null;
+  const winPath = currentMaze.winPath;
+
+  // Find progress: how many consecutive win-path nodes the tracker covers
+  let winIdx = 0;
+  for (const id of selectionTracker) {
+    if (winIdx < winPath.length && id === winPath[winIdx]) winIdx++;
+  }
+
+  // Edge case: next win-path node happens to be where ball already sits
+  // (e.g. player already moved there correctly but hint was tapped redundantly)
+  if (winIdx < winPath.length && winPath[winIdx] === ball.nodeId) winIdx++;
+
+  if (winIdx >= winPath.length) return null;   // all done — nothing to hint
+  return winPath[winIdx];
+}
+
+// ── Show a pulsing golden ring around the hint node for 3 seconds ────────────
+function showHintHighlight(nodeId) {
+  const node = currentMaze?.getNode(nodeId);
+  if (!node) return;
+
+  clearHintHighlight();           // remove any existing ring first
+  hintHighlightId = nodeId;
+
+  // Outer ring: expands + fades
+  const r0 = R + 10, r1 = R + 22;
+  // Inner ring: offset phase for a ripple look
+  const ri0 = R + 4, ri1 = R + 14;
+
+  const ringHTML = `
+    <g id="hint-ring" filter="url(#hint-glow)">
+      <circle cx="${node.x}" cy="${node.y}" r="${r0}"
+              fill="none" stroke="#F59E0B" stroke-width="3.5">
+        <animate attributeName="r"
+                 values="${r0};${r1};${r0}"
+                 dur="1s" repeatCount="indefinite"/>
+        <animate attributeName="opacity"
+                 values="1;0.1;1"
+                 dur="1s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="${node.x}" cy="${node.y}" r="${ri0}"
+              fill="none" stroke="#FDE68A" stroke-width="1.8" opacity="0.7">
+        <animate attributeName="r"
+                 values="${ri0};${ri1};${ri0}"
+                 dur="1s" begin="0.5s" repeatCount="indefinite"/>
+        <animate attributeName="opacity"
+                 values="0.7;0;0.7"
+                 dur="1s" begin="0.5s" repeatCount="indefinite"/>
+      </circle>
+    </g>`;
+
+  const layer = document.getElementById('hint-layer');
+  if (layer) layer.innerHTML = ringHTML;
+
+  // Auto-clear after 3 seconds
+  hintTimer = setTimeout(() => clearHintHighlight(), 3000);
+}
+
+// ── Remove the pulsing ring ───────────────────────────────────────────────────
+function clearHintHighlight() {
+  clearTimeout(hintTimer);
+  hintTimer       = null;
+  hintHighlightId = null;
+  const layer = document.getElementById('hint-layer');
+  if (layer) layer.innerHTML = '';
+}
+
+// ── Main hint action ──────────────────────────────────────────────────────────
+function useHint() {
+  if (hintsRemaining <= 0 || ball.moving || !currentMaze) return;
+
+  const nodeId = computeHintNodeId();
+  if (!nodeId) {
+    showToast('No hint available');
+    return;
+  }
+
+  hintsRemaining--;
+  hintsUsedThisLevel++;
+  updateHintBtn();
+  showHintHighlight(nodeId);
+  console.log(`[Hint] node=${nodeId}  remaining=${hintsRemaining}  usedThisLevel=${hintsUsedThisLevel}`);
+}
+
+document.getElementById('hint-btn').addEventListener('click', useHint);
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// LEVEL MANAGEMENT
+// ════════════════════════════════════════════════════════════════════════════
+
+let currentLevel = 1;
+let levelFading  = false;   // guard against double-fires during transition
+
+// Inner work — synchronous, no animation
+function loadLevelCore(level) {
+  currentLevel = Math.max(1, Math.min(10, level));
+  const maze   = generateMazeData(currentLevel);
+  currentMaze  = maze;
+
+  clearHintHighlight();
+  renderMaze(maze);
+  initBall(maze);
+  initRules(maze);
+  updateEquationDisplay();
+  hintsUsedThisLevel = 0;   // ← Chunk 9: reset per-level hint counter
+  undoStack = []; redoStack = [];
+  updateUndoRedoBtns();
+
+  document.getElementById('level-label').textContent  = `Level ${currentLevel}`;
+  document.getElementById('target-value').textContent = maze.target;
+  document.getElementById('btn-prev').disabled = currentLevel <= 1;
+  document.getElementById('btn-next').disabled = currentLevel >= 10;
+}
+
+// Public wrapper — adds 300 ms fade transition (skip on first load)
+function loadLevel(level, skipAnim = false) {
+  if (levelFading) return;
+  const svgCt = document.getElementById('svg-container');
+
+  if (skipAnim || !svgCt) {
+    loadLevelCore(level);
+    return;
+  }
+
+  levelFading = true;
+  svgCt.style.opacity = '0';
+
+  setTimeout(() => {
+    loadLevelCore(level);
+    svgCt.style.opacity = '1';
+    // Release guard after fade-in completes
+    setTimeout(() => { levelFading = false; }, 160);
+  }, 150);
+}
+
+document.getElementById('btn-prev').onclick = () => loadLevel(currentLevel - 1);
+document.getElementById('btn-next').onclick = () => loadLevel(currentLevel + 1);
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// CHUNK 10 — SOUNDS, PWA, FINAL HARDENING
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Audio system (Web Audio API — no external files) ─────────────────────────
+let audioCtx = null;
+
+function getAudio() {
+  if (!audioCtx) {
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch { return null; }
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  return audioCtx;
+}
+
+// Unlock AudioContext on first gesture (required by mobile browsers)
+document.addEventListener('pointerdown', getAudio, { once: true, passive: true });
+document.addEventListener('keydown',     getAudio, { once: true, passive: true });
+
+// Core oscillator helper — schedules a tone, auto-disconnects after playback
+function _osc(ctx, type, freq, vol, start, dur) {
+  try {
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type            = type;
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, start);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+    osc.start(start);
+    osc.stop(start + dur + 0.01);
+  } catch {}
+}
+
+// Noise burst — used for bounce/thud effect
+function _noise(ctx, cutoff, vol, dur) {
+  try {
+    const bufSize = Math.ceil(ctx.sampleRate * dur);
+    const buffer  = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+    const data    = buffer.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+    const src    = ctx.createBufferSource();
+    src.buffer   = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type            = 'lowpass';
+    filter.frequency.value = cutoff;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + dur);
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(ctx.destination);
+    src.start();
+    src.stop(ctx.currentTime + dur);
+  } catch {}
+}
+
+function sndNumber(ctx) {
+  _osc(ctx, 'sine', 480, 0.10, ctx.currentTime, 0.09);
+}
+
+function sndOperator(ctx) {
+  _osc(ctx, 'triangle', 320, 0.11, ctx.currentTime, 0.09);
+}
+
+function sndChime(ctx) {
+  // 3-note ascending: C5 → E5 → G5
+  const freqs = [523, 659, 784];
+  const t = ctx.currentTime;
+  freqs.forEach((f, i) => _osc(ctx, 'sine', f, 0.14, t + i * 0.11, 0.18));
+}
+
+function sndThud(ctx) {
+  // Low-pass noise burst — wrong move / bounce
+  _noise(ctx, 180, 0.18, 0.18);
+}
+
+function sndWin(ctx) {
+  // 4-note arpeggio C5 → E5 → G5 → C6 with shimmer overtone
+  const freqs = [523, 659, 784, 1047];
+  const t = ctx.currentTime;
+  freqs.forEach((f, i) => {
+    _osc(ctx, 'sine',     f,     0.15, t + i * 0.13, 0.30);
+    _osc(ctx, 'triangle', f * 2, 0.04, t + i * 0.13, 0.22);
+  });
+}
+
+function playSound(type) {
+  const ctx = getAudio();
+  if (!ctx) return;
+  try {
+    if      (type === 'number')   sndNumber(ctx);
+    else if (type === 'operator') sndOperator(ctx);
+    else if (type === 'chime')    sndChime(ctx);
+    else if (type === 'bounce')   sndThud(ctx);
+    else if (type === 'win')      sndWin(ctx);
+  } catch {}
+}
+
+// ── Visual effects ────────────────────────────────────────────────────────────
+
+// Brief scale-pop on an accepted node
+function pulseNode(nodeId) {
+  const g    = document.getElementById(`node-${nodeId}`);
+  if (!g) return;
+  const node = currentMaze?.getNode(nodeId);
+  if (node) {
+    g.style.transformBox    = 'fill-box';
+    g.style.transformOrigin = `${node.x}px ${node.y}px`;
+  }
+  g.style.transition = 'transform 0.05s ease-out';
+  g.style.transform  = 'scale(1.22)';
+  setTimeout(() => {
+    g.style.transition = 'transform 0.20s ease-out';
+    g.style.transform  = 'scale(1)';
+    setTimeout(() => {
+      g.style.transform  = '';
+      g.style.transition = '';
+    }, 220);
+  }, 70);
+}
+
+// Particle burst from the GOAL node on a correct win
+function particleBurst() {
+  const goalNode = currentMaze?.getGoalNode();
+  if (!goalNode) return;
+  const layer = document.getElementById('particle-layer');
+  if (!layer) return;
+
+  const COUNT  = 16;
+  const cx = goalNode.x, cy = goalNode.y;
+  const COLORS = ['#C4B5FD','#A78BFA','#7C3AED','#86EFAC','#FDE68A','#7DD3FC'];
+
+  const particles = [];
+  for (let i = 0; i < COUNT; i++) {
+    const angle = (i / COUNT) * Math.PI * 2;
+    const speed = 80 + Math.random() * 120;
+    const r     = 5  + Math.random() * 6;
+    const color = COLORS[i % COLORS.length];
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    el.setAttribute('cx', cx);
+    el.setAttribute('cy', cy);
+    el.setAttribute('r',  r);
+    el.setAttribute('fill', color);
+    el.setAttribute('opacity', '1');
+    layer.appendChild(el);
+    particles.push({ el, angle, speed, r });
+  }
+
+  const start    = performance.now();
+  const DURATION = 720;
+
+  function tick(now) {
+    const t = (now - start) / DURATION;
+    if (t >= 1) { layer.innerHTML = ''; return; }
+    const ease = 1 - t * t;  // ease-out quadratic
+    particles.forEach(p => {
+      const dist = p.speed * t;
+      const px   = cx + Math.cos(p.angle) * dist;
+      const py   = cy + Math.sin(p.angle) * dist;
+      p.el.setAttribute('cx', px.toFixed(2));
+      p.el.setAttribute('cy', py.toFixed(2));
+      p.el.setAttribute('opacity', ease.toFixed(3));
+      p.el.setAttribute('r', (p.r * (0.4 + 0.6 * ease)).toFixed(2));
+    });
+    requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+// ── PWA setup ─────────────────────────────────────────────────────────────────
+(function setupPWA() {
+  // 1. Generate app icon via canvas (180×180)
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 180;
+    const c = canvas.getContext('2d');
+
+    // Dark rounded background
+    c.fillStyle = '#111827';
+    if (c.roundRect) {
+      c.beginPath(); c.roundRect(0, 0, 180, 180, 36); c.fill();
+    } else {
+      c.fillRect(0, 0, 180, 180);
+    }
+
+    // Concentric arc maze symbol
+    c.strokeStyle = '#7C3AED';
+    c.lineWidth   = 8;
+    c.lineCap     = 'round';
+    [[40, 220], [60, 160], [80, 100]].forEach(([r, sweep]) => {
+      c.beginPath();
+      c.arc(90, 90, r,
+        -Math.PI / 2,
+        -Math.PI / 2 + (sweep * Math.PI / 180),
+        false);
+      c.stroke();
+    });
+
+    // White ball
+    c.fillStyle = 'white';
+    c.beginPath();
+    c.arc(90, 90, 16, 0, Math.PI * 2);
+    c.fill();
+
+    // "+" symbol accent
+    c.fillStyle        = '#7DD3FC';
+    c.font             = 'bold 30px system-ui,sans-serif';
+    c.textAlign        = 'center';
+    c.textBaseline     = 'middle';
+    c.fillText('+', 136, 44);
+
+    const iconHref = canvas.toDataURL('image/png');
+    const iconEl   = document.getElementById('apple-touch-icon');
+    if (iconEl) iconEl.href = iconHref;
+
+    // 2. Inject manifest via Blob URL
+    const manifest = {
+      name:             'Tilt Maze Math',
+      short_name:       'Tilt Maze',
+      description:      'Tilt your device to roll a ball through a math maze',
+      start_url:        './',
+      display:          'standalone',
+      background_color: '#0A0F1E',
+      theme_color:      '#111827',
+      orientation:      'portrait',
+      icons: [{ src: iconHref, sizes: '180x180', type: 'image/png', purpose: 'any maskable' }]
+    };
+    const blob    = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+    const blobURL = URL.createObjectURL(blob);
+    const mLink   = document.getElementById('pwa-manifest');
+    if (mLink) mLink.href = blobURL;
+  } catch {}
+
+  // 3. Service worker — best-effort, fails silently on file://
+  if ('serviceWorker' in navigator) {
+    try {
+      const swCode = [
+        "self.addEventListener('install',  e => self.skipWaiting());",
+        "self.addEventListener('activate', e => clients.claim());",
+        "self.addEventListener('fetch',    e => e.respondWith(",
+        "  caches.match(e.request).then(r => r || fetch(e.request))",
+        "));"
+      ].join('\n');
+      const swBlob = new Blob([swCode], { type: 'application/javascript' });
+      navigator.serviceWorker
+        .register(URL.createObjectURL(swBlob), { scope: './' })
+        .catch(() => {});
+    } catch {}
+  }
+})();
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// CONSOLE TESTS
+// ════════════════════════════════════════════════════════════════════════════
+
+const log = msg => { console.log(msg); document.getElementById('output').textContent += msg+'\n'; };
+
+log('=== CHUNK 1 — EVALUATOR ===');
+[{nums:[2,3,4],ops:['+','*'],exp:20},{nums:[10,2,3],ops:['-','+'],exp:11},
+ {nums:[6,2],ops:['/'],exp:3},{nums:[5,0],ops:['/'],exp:null}].forEach(c => {
+  const got=evaluateSequence(c.nums,c.ops), ok=got===c.exp||(got===null&&c.exp===null);
+  log(`  [${c.nums}][${c.ops}]=${got} exp=${c.exp} ${ok?'PASS':'FAIL'}`);
+});
+
+log('\n=== CHUNK 2 — MAZE STRESS TEST ===');
+let stressOk=0, stressBad=0;
+for(let i=0;i<20;i++){
+  const m=generateMazeData(rng(1,10)), c=m.evaluateWinPath();
+  (c!==null && Math.abs(c-m.target)<0.001) ? stressOk++ : stressBad++;
+}
+log(`  ${stressOk}/20 passed${stressBad?` — ${stressBad} FAILURES`:' ✓'}`);
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// INITIALISE
+// ════════════════════════════════════════════════════════════════════════════
+
+loadLevel(1, true);  // skipAnim on first load — no flash
+setupControls();
+updateHintBtn();     // Chunk 8: paint initial 🔍 ×3 label
+updateUndoRedoBtns(); // ensure undo/redo start disabled
+setTimeout(() => document.getElementById('key-hint').classList.add('fade'), 4000);
+
+// ── Tilt debug overlay — remove once tilt confirmed working ──────────────────
+(function() {
+  const el = document.getElementById('tilt-debug');
+  if (!el) return;
+  setInterval(() => {
+    const b = (lastBeta  !== null ? lastBeta  : 0).toFixed(1);
+    const g = (lastGamma !== null ? lastGamma : 0).toFixed(1);
+    el.textContent = `β: ${b}  γ: ${g}`;
+  }, 100);
+})();
+</script>
+</body>
+</html>
